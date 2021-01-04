@@ -8,12 +8,13 @@
  *
  * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0
  */
-package io.vertx.core.net.impl.clientconnection;
+package io.vertx.core.net.impl.pool;
 
-public interface Lease<C> {
+public interface ConnectionEventListener {
 
-  C get();
-
-  boolean recycle();
+  /**
+   * Signal the connection needs to be remove from the pool.
+   */
+  void remove();
 
 }

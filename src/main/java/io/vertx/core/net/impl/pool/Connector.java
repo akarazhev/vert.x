@@ -8,12 +8,17 @@
  *
  * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0
  */
-package io.vertx.core.net.impl.clientconnection;
+package io.vertx.core.net.impl.pool;
 
-public interface Lease<C> {
+import io.vertx.core.AsyncResult;
+import io.vertx.core.Handler;
+import io.vertx.core.impl.EventLoopContext;
+import io.vertx.core.net.impl.clientconnection.ConnectResult;
 
-  C get();
+public interface Connector<C> {
 
-  boolean recycle();
+  void connect(EventLoopContext context, ConnectionEventListener listener, Handler<AsyncResult<ConnectResult<C>>> handler);
+
+  boolean isValid(C connection);
 
 }

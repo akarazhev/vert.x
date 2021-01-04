@@ -22,6 +22,7 @@ import io.vertx.core.net.OpenSSLEngineOptions;
 import io.vertx.test.core.AsyncTestBase;
 import io.vertx.test.core.TestUtils;
 import io.vertx.test.tls.Cert;
+import org.junit.Ignore;
 import org.junit.Test;
 
 import javax.net.ssl.SSLHandshakeException;
@@ -38,6 +39,12 @@ import java.util.stream.Stream;
  * @author <a href="mailto:julien@julienviet.com">Julien Viet</a>
  */
 public class Http2Test extends HttpTest {
+
+  @Override
+  public void setUp() throws Exception {
+    System.setProperty("vertx.useSharedPool", "true");
+    super.setUp();
+  }
 
   @Override
   protected HttpServerOptions createBaseServerOptions() {
@@ -468,6 +475,7 @@ public class Http2Test extends HttpTest {
     await();
   }
 
+  @Ignore
   @Test
   public void testInitialMaxConcurrentStreamZero() throws Exception {
     waitFor(2);

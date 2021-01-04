@@ -57,6 +57,8 @@ abstract class ClientHttpEndpointBase<C> extends Endpoint<C> {
 
   protected abstract void requestConnection2(ContextInternal ctx, Handler<AsyncResult<C>> handler);
 
+  abstract void checkExpired();
+
   @Override
   protected void dispose() {
     if (metrics != null) {

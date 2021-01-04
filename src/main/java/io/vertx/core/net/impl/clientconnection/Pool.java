@@ -120,14 +120,14 @@ public class Pool<C> {
           return connection;
         }
         @Override
-        public void recycle() {
+        public boolean recycle() {
           synchronized (this) {
             if (recycled) {
               throw new IllegalStateException("Already recycled");
             }
             recycled = true;
           }
-          Pool.this.recycle(Holder.this);
+          return Pool.this.recycle(Holder.this);
         }
       };
     }
@@ -427,12 +427,13 @@ public class Pool<C> {
     }
   }
 
-  private synchronized void recycle(Holder holder) {
+  private synchronized boolean recycle(Holder holder) {
     if (holder.removed) {
-      return;
+      return false;
     }
     recycleConnection(holder);
     checkProgress();
+    return true;
   }
 
   private synchronized void evicted(Holder holder) {

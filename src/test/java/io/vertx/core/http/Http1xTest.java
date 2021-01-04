@@ -62,6 +62,12 @@ import static io.vertx.test.core.TestUtils.*;
 public class Http1xTest extends HttpTest {
 
   @Override
+  public void setUp() throws Exception {
+    System.setProperty("vertx.useSharedPool", "true");
+    super.setUp();
+  }
+
+  @Override
   protected VertxOptions getOptions() {
     VertxOptions options = super.getOptions();
     options.getAddressResolverOptions().setHostsValue(Buffer.buffer("" +

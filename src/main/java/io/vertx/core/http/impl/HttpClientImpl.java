@@ -15,7 +15,6 @@ import io.netty.channel.group.ChannelGroup;
 import io.netty.channel.group.ChannelGroupFuture;
 import io.netty.channel.group.DefaultChannelGroup;
 import io.vertx.core.Closeable;
-import io.vertx.core.Context;
 import io.vertx.core.Future;
 import io.vertx.core.Handler;
 import io.vertx.core.MultiMap;
@@ -116,7 +115,7 @@ public class HttpClientImpl implements HttpClient, MetricsProvider, Closeable {
   };
 
   private static final Logger log = LoggerFactory.getLogger(HttpClientImpl.class);
-  private static final Consumer<Endpoint<Lease<HttpClientConnection>>> EXPIRED_CHECKER = endpoint -> ((ClientHttpStreamEndpoint)endpoint).checkExpired();
+  private static final Consumer<Endpoint<Lease<HttpClientConnection>>> EXPIRED_CHECKER = endpoint -> ((ClientHttpEndpointBase)endpoint).checkExpired();
 
 
   private final VertxInternal vertx;
@@ -134,6 +133,7 @@ public class HttpClientImpl implements HttpClient, MetricsProvider, Closeable {
   private long timerID;
   private volatile Handler<HttpConnection> connectionHandler;
   private volatile Function<HttpClientResponse, Future<RequestOptions>> redirectHandler = DEFAULT_HANDLER;
+  private boolean useSharedPool = Boolean.getBoolean("vertx.useSharedPool");
 
   public HttpClientImpl(VertxInternal vertx, HttpClientOptions options, CloseFuture closeFuture) {
     this.vertx = vertx;
@@ -200,7 +200,6 @@ public class HttpClientImpl implements HttpClient, MetricsProvider, Closeable {
   }
 
   private ConnectionManager<EndpointKey, Lease<HttpClientConnection>> httpConnectionManager() {
-    long maxSize = options.getMaxPoolSize() * options.getHttp2MaxPoolSize();
     int maxPoolSize = Math.max(options.getMaxPoolSize(), options.getHttp2MaxPoolSize());
     return new ConnectionManager<>((key, ctx, dispose) -> {
       String host;
@@ -214,8 +213,23 @@ public class HttpClientImpl implements HttpClient, MetricsProvider, Closeable {
       }
       ClientMetrics metrics = this.metrics != null ? this.metrics.createEndpointMetrics(key.serverAddr, maxPoolSize) : null;
       HttpChannelConnector connector = new HttpChannelConnector(this, channelGroup, metrics, options.getProtocolVersion(), key.ssl ? sslHelper : null, key.peerAddr, key.serverAddr);
-      HttpConnectionProvider provider = new HttpConnectionProvider(this, connector, ctx, options.getProtocolVersion());
-      return new ClientHttpStreamEndpoint(metrics, metrics, options.getMaxWaitQueueSize(), maxSize, host, port, ctx, provider, dispose);
+      if (useSharedPool) {
+        return new SharedClientHttpStreamEndpoint(
+          this,
+          metrics,
+          metrics,
+          options.getMaxWaitQueueSize(),
+          options.getMaxPoolSize(),
+          options.getHttp2MaxPoolSize(),
+          host,
+          port,
+          connector,
+          dispose);
+      } else {
+        long maxSize = options.getMaxPoolSize() * options.getHttp2MaxPoolSize();
+        HttpConnectionProvider provider = new HttpConnectionProvider(this, connector, ctx, options.getProtocolVersion());
+        return new ClientHttpStreamEndpoint(metrics, metrics, options.getMaxWaitQueueSize(), maxSize, host, port, ctx, provider, dispose);
+      }
     });
   }
 

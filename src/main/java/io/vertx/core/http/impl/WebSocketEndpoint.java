@@ -100,6 +100,11 @@ class WebSocketEndpoint extends ClientHttpEndpointBase<HttpClientConnection> {
   }
 
   @Override
+  void checkExpired() {
+
+  }
+
+  @Override
   public void close() {
     super.close();
     synchronized (this) {
