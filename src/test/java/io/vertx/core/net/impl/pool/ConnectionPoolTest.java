@@ -49,7 +49,7 @@ public class ConnectionPoolTest extends VertxTestBase {
   public void testConnect() {
     EventLoopContext context = vertx.createEventLoopContext();
     ConnectionManager mgr = new ConnectionManager();
-    ConnectionPool<Connection> pool = new SimpleConnectionPool<>(mgr, 10, 10);
+    ConnectionPool<Connection> pool = ConnectionPool.pool(mgr, 10, 10);
     Connection expected = new Connection();
     pool.acquire(context, 1, onSuccess(lease -> {
       assertSame(expected, lease.get());
@@ -66,7 +66,7 @@ public class ConnectionPoolTest extends VertxTestBase {
   public void testAcquireRecycledConnection() throws Exception {
     EventLoopContext context = vertx.createEventLoopContext();
     ConnectionManager mgr = new ConnectionManager();
-    ConnectionPool<Connection> pool = new SimpleConnectionPool<>(mgr, 10, 10);
+    ConnectionPool<Connection> pool = ConnectionPool.pool(mgr, 10, 10);
     Connection expected = new Connection();
     CountDownLatch latch = new CountDownLatch(1);
     pool.acquire(context, 1, onSuccess(lease -> {
@@ -89,7 +89,7 @@ public class ConnectionPoolTest extends VertxTestBase {
   public void testRecycleRemovedConnection() throws Exception {
     EventLoopContext context = vertx.createEventLoopContext();
     ConnectionManager mgr = new ConnectionManager();
-    ConnectionPool<Connection> pool = new SimpleConnectionPool<>(mgr, 10, 10);
+    ConnectionPool<Connection> pool = ConnectionPool.pool(mgr, 10, 10);
     Connection expected1 = new Connection();
     Promise<Lease<Connection>> promise = Promise.promise();
     pool.acquire(context, 1, promise);
@@ -117,7 +117,7 @@ public class ConnectionPoolTest extends VertxTestBase {
   public void testCapacity() throws Exception {
     EventLoopContext context = vertx.createEventLoopContext();
     ConnectionManager mgr = new ConnectionManager();
-    ConnectionPool<Connection> pool = new SimpleConnectionPool<>(mgr, 10, 10);
+    ConnectionPool<Connection> pool = ConnectionPool.pool(mgr, 10, 10);
     int capacity = 2;
     Connection expected = new Connection(capacity);
     CountDownLatch latch = new CountDownLatch(1);
@@ -138,7 +138,7 @@ public class ConnectionPoolTest extends VertxTestBase {
   public void testSatisfyPendingWaitersWithExtraCapacity() throws Exception {
     EventLoopContext context = vertx.createEventLoopContext();
     ConnectionManager mgr = new ConnectionManager();
-    ConnectionPool<Connection> pool = new SimpleConnectionPool<>(mgr, 1, 1);
+    ConnectionPool<Connection> pool = ConnectionPool.pool(mgr, 1, 1);
     int capacity = 2;
     Connection expected = new Connection(capacity);
     AtomicInteger seq = new AtomicInteger();
@@ -160,7 +160,7 @@ public class ConnectionPoolTest extends VertxTestBase {
   public void testWaiter() throws Exception {
     EventLoopContext ctx1 = vertx.createEventLoopContext();
     ConnectionManager mgr = new ConnectionManager();
-    ConnectionPool<Connection> pool = new SimpleConnectionPool<>(mgr, 1, 1);
+    ConnectionPool<Connection> pool = ConnectionPool.pool(mgr, 1, 1);
     Connection expected = new Connection();
     CompletableFuture<Lease<Connection>> latch = new CompletableFuture<>();
     pool.acquire(ctx1, 1, onSuccess(latch::complete));
@@ -184,7 +184,7 @@ public class ConnectionPoolTest extends VertxTestBase {
   public void testRemoveSingleConnection() throws Exception {
     EventLoopContext ctx1 = vertx.createEventLoopContext();
     ConnectionManager mgr = new ConnectionManager();
-    ConnectionPool<Connection> pool = new SimpleConnectionPool<>(mgr, 1, 1);
+    ConnectionPool<Connection> pool = ConnectionPool.pool(mgr, 1, 1);
     Connection conn = new Connection();
     CompletableFuture<Lease<Connection>> latch = new CompletableFuture<>();
     pool.acquire(ctx1, 1, onSuccess(latch::complete));
@@ -200,7 +200,7 @@ public class ConnectionPoolTest extends VertxTestBase {
   public void testRemoveFirstConnection() throws Exception {
     EventLoopContext ctx = vertx.createEventLoopContext();
     ConnectionManager mgr = new ConnectionManager();
-    ConnectionPool<Connection> pool = new SimpleConnectionPool<>(mgr, 2, 2);
+    ConnectionPool<Connection> pool = ConnectionPool.pool(mgr, 2, 2);
     Connection conn1 = new Connection();
     CompletableFuture<Lease<Connection>> latch1 = new CompletableFuture<>();
     pool.acquire(ctx, 1, onSuccess(latch1::complete));
@@ -221,7 +221,7 @@ public class ConnectionPoolTest extends VertxTestBase {
   public void testRemoveSingleConnectionWithWaiter() throws Exception {
     EventLoopContext ctx1 = vertx.createEventLoopContext();
     ConnectionManager mgr = new ConnectionManager();
-    ConnectionPool<Connection> pool = new SimpleConnectionPool<>(mgr, 1, 1);
+    ConnectionPool<Connection> pool = ConnectionPool.pool(mgr, 1, 1);
     Connection connection1 = new Connection();
     CompletableFuture<Lease<Connection>> latch = new CompletableFuture<>();
     pool.acquire(ctx1, 1, onSuccess(latch::complete));
@@ -249,7 +249,7 @@ public class ConnectionPoolTest extends VertxTestBase {
   @Test
   public void testConnectFailureWithPendingWaiter() throws Exception {
     ConnectionManager mgr = new ConnectionManager();
-    ConnectionPool<Connection> pool = new SimpleConnectionPool<>(mgr, 2, 2);
+    ConnectionPool<Connection> pool = ConnectionPool.pool(mgr, 2, 2);
     Throwable failure = new Throwable();
     Connection expected = new Connection();
     CountDownLatch latch = new CountDownLatch(1);
@@ -301,7 +301,7 @@ public class ConnectionPoolTest extends VertxTestBase {
 
   private List<Integer> testExpire(int num, int max, int... recycled) throws Exception {
     ConnectionManager mgr = new ConnectionManager();
-    ConnectionPool<Connection> pool = new SimpleConnectionPool<>(mgr, max, max);
+    ConnectionPool<Connection> pool = ConnectionPool.pool(mgr, max, max);
     CountDownLatch latch = new CountDownLatch(num);
     List<Lease<Connection>> leases = new ArrayList<>();
     EventLoopContext ctx = vertx.createEventLoopContext();
@@ -336,7 +336,7 @@ public class ConnectionPoolTest extends VertxTestBase {
   @Test
   public void testConnectionInProgressShouldNotBeEvicted() {
     ConnectionManager mgr = new ConnectionManager();
-    ConnectionPool<Connection> pool = new SimpleConnectionPool<>(mgr, 1, 1, 5);
+    ConnectionPool<Connection> pool = ConnectionPool.pool(mgr, 1, 1, 5);
     EventLoopContext ctx = vertx.createEventLoopContext();
     pool.acquire(ctx, 1, ar -> {
     });
@@ -353,7 +353,7 @@ public class ConnectionPoolTest extends VertxTestBase {
   @Test
   public void testRecycleRemoveConnection() throws Exception {
     ConnectionManager mgr = new ConnectionManager();
-    ConnectionPool<Connection> pool = new SimpleConnectionPool<>(mgr, 1, 1);
+    ConnectionPool<Connection> pool = ConnectionPool.pool(mgr, 1, 1);
     Connection expected = new Connection();
     CompletableFuture<Lease<Connection>> latch = new CompletableFuture<>();
     EventLoopContext ctx1 = vertx.createEventLoopContext();
@@ -370,7 +370,7 @@ public class ConnectionPoolTest extends VertxTestBase {
   @Test
   public void testRecycleMultiple() throws Exception {
     ConnectionManager mgr = new ConnectionManager();
-    ConnectionPool<Connection> pool = new SimpleConnectionPool<>(mgr, 1, 1);
+    ConnectionPool<Connection> pool = ConnectionPool.pool(mgr, 1, 1);
     Connection expected = new Connection();
     CompletableFuture<Lease<Connection>> latch = new CompletableFuture<>();
     EventLoopContext ctx1 = vertx.createEventLoopContext();
@@ -389,7 +389,7 @@ public class ConnectionPoolTest extends VertxTestBase {
   @Test
   public void testMaxWaiters() {
     ConnectionManager mgr = new ConnectionManager();
-    ConnectionPool<Connection> pool = new SimpleConnectionPool<>(mgr, 1, 1, 5);
+    ConnectionPool<Connection> pool = ConnectionPool.pool(mgr, 1, 1, 5);
     EventLoopContext ctx = vertx.createEventLoopContext();
     for (int i = 0;i < (1 + 5);i++) {
       pool.acquire(ctx, 1, ar -> fail());
@@ -404,7 +404,7 @@ public class ConnectionPoolTest extends VertxTestBase {
   @Test
   public void testWeight() throws Exception {
     ConnectionManager mgr = new ConnectionManager();
-    ConnectionPool<Connection> pool = new SimpleConnectionPool<>(mgr, 5, 2 * 5);
+    ConnectionPool<Connection> pool = ConnectionPool.pool(mgr, 5, 2 * 5);
     EventLoopContext ctx = vertx.createEventLoopContext();
     CountDownLatch latch = new CountDownLatch(5);
     for (int i = 0;i < 5;i++) {
@@ -425,7 +425,7 @@ public class ConnectionPoolTest extends VertxTestBase {
   @Test
   public void testClose() throws Exception {
     ConnectionManager mgr = new ConnectionManager();
-    ConnectionPool<Connection> pool = new SimpleConnectionPool<>(mgr, 2, 2);
+    ConnectionPool<Connection> pool = ConnectionPool.pool(mgr, 2, 2);
     EventLoopContext ctx = vertx.createEventLoopContext();
     Connection conn1 = new Connection();
     pool.acquire(ctx, 1, onSuccess(lease -> {

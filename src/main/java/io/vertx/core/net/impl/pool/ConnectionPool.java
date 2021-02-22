@@ -32,6 +32,14 @@ import java.util.function.Predicate;
  */
 public interface ConnectionPool<C> {
 
+  static <C> ConnectionPool<C> pool(Connector<C> connector, int maxSize, int maxWeight) {
+    return new SimpleConnectionPool<>(connector, maxSize, maxWeight);
+  }
+
+  static <C> ConnectionPool<C> pool(Connector<C> connector, int maxSize, int maxWeight, int maxWaiters) {
+    return new SimpleConnectionPool<>(connector, maxSize, maxWeight, maxWaiters);
+  }
+
   /**
    * Acquire a connection from the pool.
    *

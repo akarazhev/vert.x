@@ -151,11 +151,11 @@ public class SimpleConnectionPool<C> implements ConnectionPool<C> {
 
   private final Lock lock = new ReentrantLock();
 
-  public SimpleConnectionPool(Connector<C> connector, int maxSize, int maxWeight) {
+  SimpleConnectionPool(Connector<C> connector, int maxSize, int maxWeight) {
     this(connector, maxSize, maxWeight, -1);
   }
 
-  public SimpleConnectionPool(Connector<C> connector, int maxSize, int maxWeight, int maxWaiters) {
+  SimpleConnectionPool(Connector<C> connector, int maxSize, int maxWeight, int maxWaiters) {
     this.connector = connector;
     this.slots = new Slot[maxSize];
     this.size = 0;

@@ -22,7 +22,6 @@ import io.vertx.core.net.impl.pool.ConnectionEventListener;
 import io.vertx.core.net.impl.pool.ConnectionPool;
 import io.vertx.core.net.impl.pool.Connector;
 import io.vertx.core.net.impl.clientconnection.Lease;
-import io.vertx.core.net.impl.pool.SimpleConnectionPool;
 import io.vertx.core.spi.metrics.ClientMetrics;
 
 import java.util.List;
@@ -53,7 +52,7 @@ class SharedClientHttpStreamEndpoint extends ClientHttpEndpointBase<Lease<HttpCl
     this.connector = connector;
     this.http1MaxSize = http1MaxSize;
     this.http2MaxSize = http2MaxSize;
-    this.pool = new SimpleConnectionPool<>(this, Math.max(http1MaxSize, http2MaxSize), http1MaxSize * http2MaxSize, queueMaxSize);
+    this.pool = ConnectionPool.pool(this, Math.max(http1MaxSize, http2MaxSize), http1MaxSize * http2MaxSize, queueMaxSize);
   }
 
   @Override
