@@ -173,7 +173,8 @@ public class SimpleConnectionPool<C> implements ConnectionPool<C> {
     }
   }
 
-  public List<C> evict(Predicate<C> predicate) {
+  @Override
+  public void evict(Predicate<C> predicate, Handler<AsyncResult<List<C>>> handler) {
     lock.lock();
 
     List<C> lst = new ArrayList<>();
@@ -200,7 +201,7 @@ public class SimpleConnectionPool<C> implements ConnectionPool<C> {
     lock.unlock();
 
     //
-    return lst;
+    handler.handle(Future.succeededFuture(lst));
   }
 
   public void acquire(EventLoopContext context, int weight, Handler<AsyncResult<Lease<C>>> handler) {
@@ -277,8 +278,8 @@ public class SimpleConnectionPool<C> implements ConnectionPool<C> {
     }
 
     @Override
-    public boolean recycle() {
-      return slot.pool.recycle(this);
+    public void recycle() {
+      slot.pool.recycle(this);
     }
 
     void emit() {
@@ -331,7 +332,8 @@ public class SimpleConnectionPool<C> implements ConnectionPool<C> {
     }
   }
 
-  public List<Future<C>> close() {
+  @Override
+  public void close(Handler<AsyncResult<List<Future<C>>>> handler) {
     List<Future<C>> list;
     List<Waiter<C>> b;
     lock.lock();
@@ -350,6 +352,6 @@ public class SimpleConnectionPool<C> implements ConnectionPool<C> {
       lock.unlock();
     }
     b.forEach(w -> w.context.emit(Future.failedFuture("Closed"), w.handler));
-    return list;
+    handler.handle(Future.succeededFuture(list));
   }
 }

@@ -21,7 +21,6 @@ import io.vertx.core.impl.VertxInternal;
 import io.vertx.core.net.impl.clientconnection.ConnectResult;
 import io.vertx.core.net.impl.clientconnection.Lease;
 import io.vertx.test.core.VertxTestBase;
-import org.junit.Ignore;
 import org.junit.Test;
 
 import java.util.ArrayList;
@@ -319,12 +318,19 @@ public class ConnectionPoolTest extends VertxTestBase {
     for (int i = 0;i < recycled.length;i++) {
       leases.get(recycled[i]).recycle();
     }
-    List<Connection> evicted = pool.evict(c -> true);
-    assertEquals(num - recycled.length, pool.weight());
-    List<Integer> res = new ArrayList<>();
-    List<Connection> all = leases.stream().map(Lease::get).collect(Collectors.toList());
-    evicted.forEach(c -> res.add(all.indexOf(c)));
-    return res;
+    CompletableFuture<List<Integer>> cf = new CompletableFuture<>();
+    pool.evict(c -> true, ar -> {
+      if (ar.succeeded()) {
+        assertEquals(num - recycled.length, pool.weight());
+        List<Integer> res = new ArrayList<>();
+        List<Connection> all = leases.stream().map(Lease::get).collect(Collectors.toList());
+        ar.result().forEach(c -> res.add(all.indexOf(c)));
+        cf.complete(res);
+      } else {
+        cf.completeExceptionally(ar.cause());
+      }
+    });
+    return cf.get();
   }
 
   @Test
@@ -338,7 +344,10 @@ public class ConnectionPoolTest extends VertxTestBase {
     pool.evict(c -> {
       fail();
       return false;
-    });
+    }, onSuccess(v -> {
+      testComplete();
+    }));
+    await();
   }
 
   @Test
@@ -354,7 +363,7 @@ public class ConnectionPoolTest extends VertxTestBase {
     Lease<Connection> lease = latch.get();
     request.listener.remove();
     assertEquals(0, pool.size());
-    assertFalse(lease.recycle());
+    lease.recycle();
     assertEquals(0, pool.size());
   }
 
@@ -369,7 +378,7 @@ public class ConnectionPoolTest extends VertxTestBase {
     ConnectionRequest request = mgr.assertRequest();
     request.connect(expected, 1);
     Lease<Connection> lease = latch.get();
-    assertTrue(lease.recycle());
+    lease.recycle();
     try {
       lease.recycle();
       fail();
@@ -425,15 +434,16 @@ public class ConnectionPoolTest extends VertxTestBase {
     pool.acquire(ctx, 1, ar -> {
 
     });
-    CountDownLatch latch = new CountDownLatch(1);
+    waitFor(2);
     pool.acquire(ctx, 1, onFailure(err -> {
-      latch.countDown();
+      complete();
     }));
     mgr.assertRequest().connect(conn1, 1);
     mgr.assertRequest();
-    List<Future<Connection>> close = pool.close();
-    assertEquals(2, close.size());
-    awaitLatch(latch);
+    pool.close(onSuccess(lst -> {
+      assertEquals(2, lst.size());
+      complete();
+    }));
   }
 
   static class Connection {

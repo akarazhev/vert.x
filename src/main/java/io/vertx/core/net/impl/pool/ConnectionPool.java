@@ -49,7 +49,7 @@ public interface ConnectionPool<C> {
    * @param predicate to determine whether a connection should be evicted
    * @return the list of evicted connections
    */
-  List<C> evict(Predicate<C> predicate);
+  void evict(Predicate<C> predicate, Handler<AsyncResult<List<C>>> handler);
 
   /**
    * Close the pool.
@@ -58,7 +58,7 @@ public interface ConnectionPool<C> {
    *
    * @return the list of connections to close
    */
-  List<Future<C>> close();
+  void close(Handler<AsyncResult<List<Future<C>>>> handler);
 
   /**
    * @return the number of managed connections

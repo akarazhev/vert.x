@@ -14,6 +14,6 @@ public interface Lease<C> {
 
   C get();
 
-  boolean recycle();
+  void recycle();
 
 }
