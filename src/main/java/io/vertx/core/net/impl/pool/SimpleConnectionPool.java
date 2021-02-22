@@ -23,8 +23,6 @@ import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Deque;
 import java.util.List;
-import java.util.concurrent.locks.Lock;
-import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.Predicate;
 
 public class SimpleConnectionPool<C> implements ConnectionPool<C> {
@@ -78,8 +76,7 @@ public class SimpleConnectionPool<C> implements ConnectionPool<C> {
   private final int maxWeight;
   private int weight;
   private boolean closed;
-
-  private final Lock lock = new ReentrantLock();
+  private final Synchronization<SimpleConnectionPool<C>> sync;
 
   SimpleConnectionPool(Connector<C> connector, int maxSize, int maxWeight) {
     this(connector, maxSize, maxWeight, -1);
@@ -92,32 +89,20 @@ public class SimpleConnectionPool<C> implements ConnectionPool<C> {
     this.maxWaiters = maxWaiters;
     this.weight = 0;
     this.maxWeight = maxWeight;
+    this.sync = new NonBlockingSynchronization2<>(this);
   }
 
-  private static abstract class Action<C> {
-    abstract Runnable execute(SimpleConnectionPool<C> pool);
-  }
-
-  private void execute(Action<C> action) {
-    lock.lock();
-    Runnable post = null;
-    try {
-      post = action.execute(this);
-    } finally {
-      lock.unlock();
-      if (post != null) {
-        post.run();
-      }
-    }
+  private void execute(Synchronization.Action<SimpleConnectionPool<C>> action) {
+    sync.execute(action);
   }
 
   public int size() {
-    lock.lock();
-    try {
+//    lock.lock();
+//    try {
       return size;
-    } finally {
-      lock.unlock();
-    }
+//    } finally {
+//      lock.unlock();
+//    }
   }
 
   public void connect(Slot<C> slot, Handler<AsyncResult<Lease<C>>> handler) {
@@ -130,7 +115,7 @@ public class SimpleConnectionPool<C> implements ConnectionPool<C> {
     });
   }
 
-  private static class ConnectSuccess<C> extends Action<C> {
+  private static class ConnectSuccess<C> implements Synchronization.Action<SimpleConnectionPool<C>> {
 
     private final Slot<C> slot;
     private final ConnectResult<C> result;
@@ -143,7 +128,7 @@ public class SimpleConnectionPool<C> implements ConnectionPool<C> {
     }
 
     @Override
-    Runnable execute(SimpleConnectionPool<C> pool) {
+    public Runnable execute(SimpleConnectionPool<C> pool) {
       int initialWeight = slot.weight;
       slot.connection = result.connection();
       slot.maxCapacity = (int)result.concurrency();
@@ -194,7 +179,7 @@ public class SimpleConnectionPool<C> implements ConnectionPool<C> {
     }
 
     @Override
-    Runnable execute(SimpleConnectionPool<C> pool) {
+    public Runnable execute(SimpleConnectionPool<C> pool) {
       Runnable res = super.execute(pool);
       return () -> {
         if (res != null) {
@@ -206,7 +191,7 @@ public class SimpleConnectionPool<C> implements ConnectionPool<C> {
     }
   }
 
-  private static class Remove<C> extends Action<C> {
+  private static class Remove<C> implements Synchronization.Action<SimpleConnectionPool<C>> {
 
     protected final Slot<C> removed;
 
@@ -215,7 +200,7 @@ public class SimpleConnectionPool<C> implements ConnectionPool<C> {
     }
 
     @Override
-    Runnable execute(SimpleConnectionPool<C> pool) {
+    public Runnable execute(SimpleConnectionPool<C> pool) {
       int w = removed.weight;
       removed.capacity = 0;
       removed.maxCapacity = 0;
@@ -249,7 +234,7 @@ public class SimpleConnectionPool<C> implements ConnectionPool<C> {
     execute(new Remove<>(removed));
   }
 
-  private static class Evict<C> extends Action<C> {
+  private static class Evict<C> implements Synchronization.Action<SimpleConnectionPool<C>> {
 
     private final Predicate<C> predicate;
     private final Handler<AsyncResult<List<C>>> handler;
@@ -260,7 +245,7 @@ public class SimpleConnectionPool<C> implements ConnectionPool<C> {
     }
 
     @Override
-    Runnable execute(SimpleConnectionPool<C> pool) {
+    public Runnable execute(SimpleConnectionPool<C> pool) {
       List<C> lst = new ArrayList<>();
       for (int i = pool.size - 1;i >= 0;i--) {
         Slot<C> slot = pool.slots[i];
@@ -289,7 +274,7 @@ public class SimpleConnectionPool<C> implements ConnectionPool<C> {
     execute(new Evict<>(predicate, handler));
   }
 
-  private static class Acquire<C> extends Action<C> {
+  private static class Acquire<C> implements Synchronization.Action<SimpleConnectionPool<C>> {
 
     private final EventLoopContext context;
     private final int weight;
@@ -302,7 +287,7 @@ public class SimpleConnectionPool<C> implements ConnectionPool<C> {
     }
 
     @Override
-    Runnable execute(SimpleConnectionPool<C> pool) {
+    public Runnable execute(SimpleConnectionPool<C> pool) {
       if (pool.closed) {
         return () -> context.emit(Future.failedFuture("Closed"), handler);
       }
@@ -378,7 +363,7 @@ public class SimpleConnectionPool<C> implements ConnectionPool<C> {
     }
   }
 
-  private static class Recycle<C> extends Action<C> {
+  private static class Recycle<C> implements Synchronization.Action<SimpleConnectionPool<C>> {
 
     private final Slot<C> slot;
 
@@ -387,7 +372,7 @@ public class SimpleConnectionPool<C> implements ConnectionPool<C> {
     }
 
     @Override
-    Runnable execute(SimpleConnectionPool<C> pool) {
+    public Runnable execute(SimpleConnectionPool<C> pool) {
       if (slot.connection != null) {
         if (pool.waiters.size() > 0) {
           Waiter<C> waiter = pool.waiters.poll();
@@ -411,24 +396,24 @@ public class SimpleConnectionPool<C> implements ConnectionPool<C> {
   }
 
   public int waiters() {
-    lock.lock();
-    try {
+    // lock.lock();
+    // try {
       return waiters.size();
-    } finally {
-      lock.unlock();
-    }
+    // } finally {
+    //   lock.unlock();
+    // }
   }
 
   public int weight() {
-    lock.lock();
-    try {
+    // lock.lock();
+    // try {
       return weight;
-    } finally {
-      lock.unlock();
-    }
+    // } finally {
+    //  lock.unlock();
+    // }
   }
 
-  private static class Close<C> extends Action<C> {
+  private static class Close<C> implements Synchronization.Action<SimpleConnectionPool<C>> {
 
     private final Handler<AsyncResult<List<Future<C>>>> handler;
 
@@ -437,7 +422,7 @@ public class SimpleConnectionPool<C> implements ConnectionPool<C> {
     }
 
     @Override
-    Runnable execute(SimpleConnectionPool<C> pool) {
+    public Runnable execute(SimpleConnectionPool<C> pool) {
       List<Future<C>> list;
       List<Waiter<C>> b;
       if (pool.closed) {
