@@ -94,6 +94,23 @@ public class SimpleConnectionPool<C> implements ConnectionPool<C> {
     this.maxWeight = maxWeight;
   }
 
+  private static abstract class Action<C> {
+    abstract Runnable execute(SimpleConnectionPool<C> pool);
+  }
+
+  private void execute(Action<C> action) {
+    lock.lock();
+    Runnable post = null;
+    try {
+      post = action.execute(this);
+    } finally {
+      lock.unlock();
+      if (post != null) {
+        post.run();
+      }
+    }
+  }
+
   public int size() {
     lock.lock();
     try {
@@ -106,168 +123,231 @@ public class SimpleConnectionPool<C> implements ConnectionPool<C> {
   public void connect(Slot<C> slot, Handler<AsyncResult<Lease<C>>> handler) {
     connector.connect(slot.context, slot, ar -> {
       if (ar.succeeded()) {
-        connectSucceeded(slot, ar.result(), handler);
+        execute(new ConnectSuccess<>(slot, ar.result(), handler));
       } else {
-        connectFailed(slot, ar.cause(), handler);
+        execute(new ConnectFailed(slot, ar.cause(), handler));
       }
     });
   }
 
-  private void connectSucceeded(Slot<C> slot, ConnectResult<C> result, Handler<AsyncResult<Lease<C>>> handler) {
-    lock.lock();
-    int initialWeight = slot.weight;
-    slot.connection = result.connection();
-    slot.maxCapacity = (int)result.concurrency();
-    slot.weight = (int) result.weight();
-    slot.capacity = slot.maxCapacity;
-    weight += (result.weight() - initialWeight);
-    if (closed) {
-      lock.unlock();
-      slot.context.emit(Future.failedFuture("Closed"), handler);
-    } else {
-      int c = 1;
-      LeaseImpl<C>[] extra = null;
-      int m = Math.min(slot.capacity - 1, waiters.size());
-      if (m > 0) {
-        c += m;
-        extra = new LeaseImpl[m];
-        for (int i = 0;i < m;i++) {
-          extra[i] = new LeaseImpl<>(slot, waiters.poll().handler);
+  private static class ConnectSuccess<C> extends Action<C> {
+
+    private final Slot<C> slot;
+    private final ConnectResult<C> result;
+    private final Handler<AsyncResult<Lease<C>>> handler;
+
+    private ConnectSuccess(Slot<C> slot, ConnectResult<C> result, Handler<AsyncResult<Lease<C>>> handler) {
+      this.slot = slot;
+      this.result = result;
+      this.handler = handler;
+    }
+
+    @Override
+    Runnable execute(SimpleConnectionPool<C> pool) {
+      int initialWeight = slot.weight;
+      slot.connection = result.connection();
+      slot.maxCapacity = (int)result.concurrency();
+      slot.weight = (int) result.weight();
+      slot.capacity = slot.maxCapacity;
+      pool.weight += (result.weight() - initialWeight);
+      if (pool.closed) {
+        return () -> {
+          slot.context.emit(Future.failedFuture("Closed"), handler);
+          slot.result.complete(slot.connection);
+        };
+      } else {
+        int c = 1;
+        LeaseImpl<C>[] extra;
+        int m = Math.min(slot.capacity - 1, pool.waiters.size());
+        if (m > 0) {
+          c += m;
+          extra = new LeaseImpl[m];
+          for (int i = 0;i < m;i++) {
+            extra[i] = new LeaseImpl<>(slot, pool.waiters.poll().handler);
+          }
+        } else {
+          extra = null;
         }
-      }
-      slot.capacity -= c;
-      lock.unlock();
-      new LeaseImpl<>(slot, handler).emit();
-      if (extra != null) {
-        for (LeaseImpl<C> lease : extra) {
-          lease.emit();
-        }
+        slot.capacity -= c;
+        return () -> {
+          new LeaseImpl<>(slot, handler).emit();
+          if (extra != null) {
+            for (LeaseImpl<C> lease : extra) {
+              lease.emit();
+            }
+          }
+          slot.result.complete(slot.connection);
+        };
       }
     }
-    slot.result.complete(slot.connection);
   }
 
-  private void connectFailed(Slot<C> slot, Throwable cause, Handler<AsyncResult<Lease<C>>> handler) {
-    remove(slot);
-    slot.context.emit(Future.failedFuture(cause), handler);
-    slot.result.fail(cause);
+  private static class ConnectFailed<C> extends Remove<C> {
+
+    private final Throwable cause;
+    private final Handler<AsyncResult<Lease<C>>> handler;
+
+    public ConnectFailed(Slot<C> removed, Throwable cause, Handler<AsyncResult<Lease<C>>> handler) {
+      super(removed);
+      this.cause = cause;
+      this.handler = handler;
+    }
+
+    @Override
+    Runnable execute(SimpleConnectionPool<C> pool) {
+      Runnable res = super.execute(pool);
+      return () -> {
+        if (res != null) {
+          res.run();
+        }
+        removed.context.emit(Future.failedFuture(cause), handler);
+        removed.result.fail(cause);
+      };
+    }
+  }
+
+  private static class Remove<C> extends Action<C> {
+
+    protected final Slot<C> removed;
+
+    private Remove(Slot<C> removed) {
+      this.removed = removed;
+    }
+
+    @Override
+    Runnable execute(SimpleConnectionPool<C> pool) {
+      int w = removed.weight;
+      removed.capacity = 0;
+      removed.maxCapacity = 0;
+      removed.connection = null;
+      removed.weight = 0;
+      Waiter<C> waiter = pool.waiters.poll();
+      if (waiter != null) {
+        Slot<C> slot = new Slot<>(pool, waiter.context, removed.index, waiter.weight);
+        pool.weight -= w;
+        pool.weight += waiter.weight;
+        pool.slots[removed.index] = slot;
+        return () -> pool.connect(slot, waiter.handler);
+      } else if (pool.size > 1) {
+        Slot<C> tmp = pool.slots[pool.size - 1];
+        tmp.index = removed.index;
+        pool.slots[removed.index] = tmp;
+        pool.slots[pool.size - 1] = null;
+        pool.size--;
+        pool.weight -= w;
+        return null;
+      } else {
+        pool.slots[0] = null;
+        pool.size--;
+        pool.weight -= w;
+        return null;
+      }
+    }
   }
 
   private void remove(Slot<C> removed) {
-    lock.lock();
-    int w = removed.weight;
-    removed.capacity = 0;
-    removed.maxCapacity = 0;
-    removed.connection = null;
-    removed.weight = 0;
-    Waiter<C> waiter = waiters.poll();
-    if (waiter != null) {
-      Slot<C> slot = new Slot<>(this, waiter.context, removed.index, waiter.weight);
-      weight -= w;
-      weight += waiter.weight;
-      slots[removed.index] = slot;
-      lock.unlock();
-      connect(slot, waiter.handler);
-    } else if (size > 1) {
-      Slot<C> tmp = slots[size - 1];
-      tmp.index = removed.index;
-      slots[removed.index] = tmp;
-      slots[size - 1] = null;
-      size--;
-      weight -= w;
-      lock.unlock();
-    } else {
-      slots[0] = null;
-      size--;
-      weight -= w;
-      lock.unlock();
+    execute(new Remove<>(removed));
+  }
+
+  private static class Evict<C> extends Action<C> {
+
+    private final Predicate<C> predicate;
+    private final Handler<AsyncResult<List<C>>> handler;
+
+    public Evict(Predicate<C> predicate, Handler<AsyncResult<List<C>>> handler) {
+      this.predicate = predicate;
+      this.handler = handler;
+    }
+
+    @Override
+    Runnable execute(SimpleConnectionPool<C> pool) {
+      List<C> lst = new ArrayList<>();
+      for (int i = pool.size - 1;i >= 0;i--) {
+        Slot<C> slot = pool.slots[i];
+        if (slot.connection != null && slot.capacity == slot.maxCapacity && predicate.test(slot.connection)) {
+          lst.add(slot.connection);
+          slot.capacity = 0;
+          slot.maxCapacity = 0;
+          slot.connection = null;
+          if (i == pool.size - 1) {
+            pool.slots[i] = null;
+          } else {
+            Slot<C> last = pool.slots[pool.size - 1];
+            last.index = i;
+            pool.slots[i] = last;
+          }
+          pool.weight -= slot.weight;
+          pool.size--;
+        }
+      }
+      return () -> handler.handle(Future.succeededFuture(lst));
     }
   }
 
   @Override
   public void evict(Predicate<C> predicate, Handler<AsyncResult<List<C>>> handler) {
-    lock.lock();
+    execute(new Evict<>(predicate, handler));
+  }
 
-    List<C> lst = new ArrayList<>();
+  private static class Acquire<C> extends Action<C> {
 
-    for (int i = size - 1;i >= 0;i--) {
-      Slot<C> slot = slots[i];
-      if (slot.connection != null && slot.capacity == slot.maxCapacity && predicate.test(slot.connection)) {
-        lst.add(slot.connection);
-        slot.capacity = 0;
-        slot.maxCapacity = 0;
-        slot.connection = null;
-        if (i == size - 1) {
-          slots[i] = null;
-        } else {
-          Slot<C> last = slots[size - 1];
-          last.index = i;
-          slots[i] = last;
-        }
-        weight -= slot.weight;
-        size--;
-      }
+    private final EventLoopContext context;
+    private final int weight;
+    private final Handler<AsyncResult<Lease<C>>> handler;
+
+    public Acquire(EventLoopContext context, int weight, Handler<AsyncResult<Lease<C>>> handler) {
+      this.context = context;
+      this.weight = weight;
+      this.handler = handler;
     }
 
-    lock.unlock();
+    @Override
+    Runnable execute(SimpleConnectionPool<C> pool) {
+      if (pool.closed) {
+        return () -> context.emit(Future.failedFuture("Closed"), handler);
+      }
 
-    //
-    handler.handle(Future.succeededFuture(lst));
+      // 1. Try reuse a existing connection with the same context
+      for (int i = 0;i < pool.size;i++) {
+        Slot<C> slot = pool.slots[i];
+        if (slot != null && slot.context == context && slot.capacity > 0) {
+          slot.capacity--;
+          return () -> new LeaseImpl<>(slot, handler).emit();
+        }
+      }
+
+      // 2. Try create connection
+      if (pool.weight < pool.maxWeight) {
+        pool.weight += weight;
+        if (pool.size < pool.slots.length) {
+          Slot<C> slot = new Slot<>(pool, context, pool.size, weight);
+          pool.slots[pool.size++] = slot;
+          return () -> pool.connect(slot, handler);
+        } else {
+          throw new IllegalStateException();
+        }
+      }
+
+      // 3. Try use another context
+      for (Slot<C> slot : pool.slots) {
+        if (slot != null && slot.capacity > 0) {
+          slot.capacity--;
+          return () -> new LeaseImpl<>(slot, handler).emit();
+        }
+      }
+
+      // 4. Fall in waiters list
+      if (pool.maxWaiters == -1 || pool.waiters.size() < pool.maxWaiters) {
+        pool.waiters.add(new Waiter<>(context, weight, handler));
+        return null;
+      } else {
+        return () -> context.emit(Future.failedFuture(new ConnectionPoolTooBusyException("Connection pool reached max wait queue size of " + pool.maxWaiters)), handler);
+      }
+    }
   }
 
   public void acquire(EventLoopContext context, int weight, Handler<AsyncResult<Lease<C>>> handler) {
-
-    lock.lock();
-
-    if (closed) {
-      lock.unlock();
-      context.emit(Future.failedFuture("Closed"), handler);
-      return;
-    }
-
-    // 1. Try reuse a existing connection with the same context
-    for (int i = 0;i < size;i++) {
-      Slot<C> slot = slots[i];
-      if (slot != null && slot.context == context && slot.capacity > 0) {
-        slot.capacity--;
-        lock.unlock();
-        new LeaseImpl<>(slot, handler).emit();
-        return;
-      }
-    }
-
-    // 2. Try create connection
-    if (this.weight < maxWeight) {
-      this.weight += weight;
-      if (size < slots.length) {
-        Slot<C> slot = new Slot<>(this, context, size, weight);
-        slots[size++] = slot;
-        lock.unlock();
-        connect(slot, handler);
-        return;
-      } else {
-        throw new IllegalStateException();
-      }
-    }
-
-    // 3. Try use another context
-    for (Slot<C> slot : slots) {
-      if (slot != null && slot.capacity > 0) {
-        slot.capacity--;
-        lock.unlock();
-        new LeaseImpl<>(slot, handler).emit();
-        return;
-      }
-    }
-
-    // 4. Fall in waiters list
-    if (maxWaiters == -1 || waiters.size() < maxWaiters) {
-      waiters.add(new Waiter<>(context, weight, handler));
-      lock.unlock();
-    } else {
-      lock.unlock();
-      context.emit(Future.failedFuture(new ConnectionPoolTooBusyException("Connection pool reached max wait queue size of " + maxWaiters)), handler);
-    }
+    execute(new Acquire<>(context, weight, handler));
   }
 
   static class LeaseImpl<C> implements Lease<C> {
@@ -298,31 +378,36 @@ public class SimpleConnectionPool<C> implements ConnectionPool<C> {
     }
   }
 
-  private boolean recycle(LeaseImpl<C> lease) {
+  private static class Recycle<C> extends Action<C> {
 
-    lock.lock();
+    private final Slot<C> slot;
 
+    public Recycle(Slot<C> slot) {
+      this.slot = slot;
+    }
+
+    @Override
+    Runnable execute(SimpleConnectionPool<C> pool) {
+      if (slot.connection != null) {
+        if (pool.waiters.size() > 0) {
+          Waiter<C> waiter = pool.waiters.poll();
+          return () -> new LeaseImpl<>(slot, waiter.handler).emit();
+        } else {
+          slot.capacity++;
+          return null;
+        }
+      } else {
+        return null;
+      }
+    }
+  }
+
+  private void recycle(LeaseImpl<C> lease) {
     if (lease.recycled) {
       throw new IllegalStateException("Attempt to recycle more than permitted");
     }
     lease.recycled = true;
-
-    Slot slot = lease.slot;
-
-    if (slot.connection != null) {
-      if (waiters.size() > 0) {
-        Waiter<C> waiter = waiters.poll();
-        lock.unlock();
-        new LeaseImpl<>(slot, waiter.handler).emit();
-      } else {
-        slot.capacity++;
-        lock.unlock();
-      }
-      return true;
-    } else {
-      lock.unlock();
-      return false;
-    }
+    execute(new Recycle<>(lease.slot));
   }
 
   public int waiters() {
@@ -343,26 +428,37 @@ public class SimpleConnectionPool<C> implements ConnectionPool<C> {
     }
   }
 
-  @Override
-  public void close(Handler<AsyncResult<List<Future<C>>>> handler) {
-    List<Future<C>> list;
-    List<Waiter<C>> b;
-    lock.lock();
-    try {
-      if (closed) {
+  private static class Close<C> extends Action<C> {
+
+    private final Handler<AsyncResult<List<Future<C>>>> handler;
+
+    private Close(Handler<AsyncResult<List<Future<C>>>> handler) {
+      this.handler = handler;
+    }
+
+    @Override
+    Runnable execute(SimpleConnectionPool<C> pool) {
+      List<Future<C>> list;
+      List<Waiter<C>> b;
+      if (pool.closed) {
         throw new IllegalStateException();
       }
-      closed = true;
-      b = new ArrayList<>(waiters);
-      waiters.clear();
+      pool.closed = true;
+      b = new ArrayList<>(pool.waiters);
+      pool.waiters.clear();
       list = new ArrayList<>();
-      for (int i = 0;i < size;i++) {
-        list.add(slots[i].result.future());
+      for (int i = 0;i < pool.size;i++) {
+        list.add(pool.slots[i].result.future());
       }
-    } finally {
-      lock.unlock();
+      return () -> {
+        b.forEach(w -> w.context.emit(Future.failedFuture("Closed"), w.handler));
+        handler.handle(Future.succeededFuture(list));
+      };
     }
-    b.forEach(w -> w.context.emit(Future.failedFuture("Closed"), w.handler));
-    handler.handle(Future.succeededFuture(list));
+  }
+
+  @Override
+  public void close(Handler<AsyncResult<List<Future<C>>>> handler) {
+    execute(new Close<>(handler));
   }
 }
