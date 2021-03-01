@@ -97,12 +97,7 @@ public class SimpleConnectionPool<C> implements ConnectionPool<C> {
   }
 
   public int size() {
-//    lock.lock();
-//    try {
       return size;
-//    } finally {
-//      lock.unlock();
-//    }
   }
 
   public void connect(Slot<C> slot, Handler<AsyncResult<Lease<C>>> handler) {
@@ -396,21 +391,11 @@ public class SimpleConnectionPool<C> implements ConnectionPool<C> {
   }
 
   public int waiters() {
-    // lock.lock();
-    // try {
-      return waiters.size();
-    // } finally {
-    //   lock.unlock();
-    // }
+    return waiters.size();
   }
 
   public int weight() {
-    // lock.lock();
-    // try {
-      return weight;
-    // } finally {
-    //  lock.unlock();
-    // }
+    return weight;
   }
 
   private static class Close<C> implements Synchronization.Action<SimpleConnectionPool<C>> {

@@ -11,7 +11,6 @@
 
 package io.vertx.core.http.impl;
 
-import io.netty.bootstrap.Bootstrap;
 import io.netty.channel.Channel;
 import io.netty.channel.ChannelHandler;
 import io.netty.channel.ChannelPipeline;
@@ -20,7 +19,6 @@ import io.netty.handler.codec.http.*;
 import io.netty.handler.logging.LoggingHandler;
 import io.netty.handler.ssl.SslHandler;
 import io.netty.handler.timeout.IdleStateHandler;
-import io.netty.util.concurrent.GenericFutureListener;
 import io.vertx.core.Future;
 import io.vertx.core.Promise;
 import io.vertx.core.http.HttpClientOptions;
@@ -144,25 +142,6 @@ public class HttpChannelConnector {
 
   public Future<HttpClientConnection> httpConnect(EventLoopContext context) {
     return connect(context).flatMap(so -> wrap(context, so));
-
-
-    //    boolean domainSocket = server.path() != null;
-//
-//    Bootstrap bootstrap = new Bootstrap();
-//    bootstrap.group(context.nettyEventLoop());
-//
-//    applyConnectionOptions(domainSocket, bootstrap);
-//
-//    ChannelProvider channelProvider = new ChannelProvider(bootstrap, sslHelper, context, options);
-//    // SocketAddress.inetSocketAddress(server.port(), peerHost)
-//    Future<Channel> fut = channelProvider.connect(server, peerAddress, this.options.isForceSni() ? peerAddress.host() : null, sslHelper != null);
-//
-//    fut.addListener((GenericFutureListener<Future<Channel>>) res -> {
-//    });
-  }
-
-  private void applyConnectionOptions(boolean domainSocket, Bootstrap bootstrap) {
-    client.getVertx().transport().configure(options, domainSocket, bootstrap);
   }
 
   private void applyHttp2ConnectionOptions(ChannelPipeline pipeline) {

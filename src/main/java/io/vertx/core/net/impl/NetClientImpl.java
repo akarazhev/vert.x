@@ -182,10 +182,6 @@ public class NetClientImpl implements MetricsProvider, NetClient, Closeable {
     }
   }
 
-  private void applyConnectionOptions(boolean domainSocket, Bootstrap bootstrap) {
-    vertx.transport().configure(options, domainSocket, bootstrap);
-  }
-
   @Override
   public NetClient connect(SocketAddress remoteAddress, String serverName, Handler<AsyncResult<NetSocket>> connectHandler) {
     Objects.requireNonNull(connectHandler, "No null connectHandler accepted");
@@ -219,7 +215,7 @@ public class NetClientImpl implements MetricsProvider, NetClient, Closeable {
     Bootstrap bootstrap = new Bootstrap();
     bootstrap.group(context.nettyEventLoop());
 
-    applyConnectionOptions(remoteAddress.isDomainSocket(), bootstrap);
+    vertx.transport().configure(options, remoteAddress.isDomainSocket(), bootstrap);
 
     ChannelProvider channelProvider = new ChannelProvider(bootstrap, sslHelper, context, options.getProxyOptions());
 
