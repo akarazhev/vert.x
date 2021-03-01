@@ -16,19 +16,24 @@ public class NonBlockingSynchronization1<S> implements Synchronization<S> {
   @Override
   public void execute(Action<S> action) {
     q.add(action);
-    if (s.incrementAndGet() == 1) {
-      while (true) {
-        int cnt = 0;
+    if (s.get() > 0) {
+      return;
+    }
+    while (s.compareAndSet(0, 1)) {
+      try {
         Action<S> a;
         while ((a = q.poll()) != null) {
-          cnt++;
           Runnable post = a.execute(state);
           if (post != null) {
             post.run();
           }
         }
-        if (s.addAndGet(-cnt) == 0) {
-          break;
+      } finally {
+        s.set(0);
+        // full barrier here:
+        // the q emptiness check cannot happen before
+        if (q.isEmpty()) {
+          return;
         }
       }
     }
