@@ -10,6 +10,11 @@
  */
 package io.vertx.core.net.impl.pool;
 
+/**
+ * The contract by which the back-end can signal the pool of connection events.
+ *
+ * <p> A connection listener is used for each connection in the pool.
+ */
 public interface ConnectionEventListener {
 
   /**

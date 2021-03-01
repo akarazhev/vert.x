@@ -15,10 +15,31 @@ import io.vertx.core.Handler;
 import io.vertx.core.impl.EventLoopContext;
 import io.vertx.core.net.impl.clientconnection.ConnectResult;
 
+/**
+ * Defines the interaction with the actual back-end managing connections.
+ *
+ * @param <C>
+ */
 public interface Connector<C> {
 
+  /**
+   * Connects to a back-end.
+   *
+   * @param context the context to use for IO
+   * @param listener the listener
+   * @param handler the callback handler with the result
+   */
   void connect(EventLoopContext context, ConnectionEventListener listener, Handler<AsyncResult<ConnectResult<C>>> handler);
 
+  /**
+   * Checks whether the connection is still valid.
+   *
+   * <p> The pool calls this method when it checks the validity of a connection. Any connection
+   * will be evicted from the pool.
+   *
+   * @param connection the connection to check
+   * @return whether the connection is valid or not
+   */
   boolean isValid(C connection);
 
 }

@@ -45,7 +45,7 @@ public interface ConnectionPool<C> {
    *
    * @param context the context
    * @param weight the weight
-   * @param handler the callback
+   * @param handler the callback handler with the result
    */
   void acquire(EventLoopContext context, int weight, Handler<AsyncResult<Lease<C>>> handler);
 
@@ -55,7 +55,7 @@ public interface ConnectionPool<C> {
    * <p> The operation returns the list of connections that won't be managed anymore by the pool.
    *
    * @param predicate to determine whether a connection should be evicted
-   * @return the list of evicted connections
+   * @param handler the callback handler with the result
    */
   void evict(Predicate<C> predicate, Handler<AsyncResult<List<C>>> handler);
 
@@ -64,7 +64,7 @@ public interface ConnectionPool<C> {
    *
    * <p> This will not close the connections, instead a list of connections to be closed is returned.
    *
-   * @return the list of connections to close
+   * @param handler the callback handler with the result
    */
   void close(Handler<AsyncResult<List<Future<C>>>> handler);
 
