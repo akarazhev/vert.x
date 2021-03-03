@@ -45,7 +45,6 @@ public final class ChannelProvider {
   private final ContextInternal context;
   private final ProxyOptions proxyOptions;
   private String applicationProtocol;
-  private Channel channel;
 
   public ChannelProvider(Bootstrap bootstrap,
                          SSLHelper sslHelper,
@@ -62,13 +61,6 @@ public final class ChannelProvider {
    */
   public String applicationProtocol() {
     return applicationProtocol;
-  }
-
-  /**
-   * @return the created channel
-   */
-  public Channel channel() {
-    return channel;
   }
 
   public Future<Channel> connect(SocketAddress remoteAddress, SocketAddress peerAddress, String serverName, boolean ssl) {
@@ -91,7 +83,7 @@ public final class ChannelProvider {
     }
   }
 
-  private void initSSL(SocketAddress peerAddress, String serverName, boolean ssl, Channel ch, Promise<Channel> channelHandler) {
+  private void initSSL(SocketAddress peerAddress, String serverName, boolean ssl, Channel ch, Promise<Channel> promise) {
     if (ssl) {
       SslHandler sslHandler = new SslHandler(sslHelper.createEngine(context.owner(), peerAddress, serverName));
       sslHandler.setHandshakeTimeout(sslHelper.getSslHandshakeTimeout(), sslHelper.getSslHandshakeTimeoutUnit());
@@ -107,11 +99,11 @@ public final class ChannelProvider {
               // Remove from the pipeline after handshake result
               ctx.pipeline().remove(this);
               applicationProtocol = sslHandler.applicationProtocol();
-              channelHandler.setSuccess(channel);
+              promise.setSuccess(ctx.channel());
             } else {
               SSLHandshakeException sslException = new SSLHandshakeException("Failed to create SSL connection");
               sslException.initCause(completion.cause());
-              channelHandler.setFailure(sslException);
+              promise.setFailure(sslException);
             }
           }
           ctx.fireUserEventTriggered(evt);
@@ -148,20 +140,19 @@ public final class ChannelProvider {
    * Signal we are connected to the remote server.
    *
    * @param channel the channel
-   * @param channelHandler the channel handler
+   * @param promise the promise
    */
-  private void connected(Channel channel, boolean ssl, Promise<Channel> channelHandler) {
-    this.channel = channel;
+  private void connected(Channel channel, boolean ssl, Promise<Channel> promise) {
     if (!ssl) {
       // No handshake
-      channelHandler.setSuccess(channel);
+      promise.setSuccess(channel);
     }
   }
 
   /**
    * A channel provider that connects via a Proxy : HTTP or SOCKS
    */
-  private void handleProxyConnect(SocketAddress remoteAddress, SocketAddress peerAddress, String serverName, boolean ssl, Promise<Channel> channelHandler) {
+  private void handleProxyConnect(SocketAddress remoteAddress, SocketAddress peerAddress, String serverName, boolean ssl, Promise<Channel> promise) {
 
     final VertxInternal vertx = context.owner();
     final String proxyHost = proxyOptions.getHost();
@@ -207,15 +198,15 @@ public final class ChannelProvider {
                 if (evt instanceof ProxyConnectionEvent) {
                   pipeline.remove(proxy);
                   pipeline.remove(this);
-                  initSSL(peerAddress, serverName, ssl, ch, channelHandler);
-                  connected(ch, ssl, channelHandler);
+                  initSSL(peerAddress, serverName, ssl, ch, promise);
+                  connected(ch, ssl, promise);
                 }
                 ctx.fireUserEventTriggered(evt);
               }
 
               @Override
               public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) {
-                channelHandler.setFailure(cause);
+                promise.setFailure(cause);
               }
             });
           }
@@ -224,11 +215,11 @@ public final class ChannelProvider {
 
         future.addListener(res -> {
           if (!res.isSuccess()) {
-            channelHandler.setFailure(res.cause());
+            promise.setFailure(res.cause());
           }
         });
       } else {
-        channelHandler.setFailure(dnsRes.cause());
+        promise.setFailure(dnsRes.cause());
       }
     });
   }
