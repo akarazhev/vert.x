@@ -29,6 +29,7 @@ import javax.net.ssl.SSLEngine;
 import javax.net.ssl.SSLHandshakeException;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
+import java.util.Map;
 
 /**
  * The logic for connecting to an host, this implementations performs a connection
@@ -90,6 +91,15 @@ public final class ChannelProvider {
       ChannelPipeline pipeline = ch.pipeline();
       pipeline.addLast("ssl", sslHandler);
       pipeline.addLast(new ChannelInboundHandlerAdapter() {
+        @Override
+        public void channelRead(ChannelHandlerContext ctx, Object msg) throws Exception {
+          super.channelRead(ctx, msg);
+          System.out.println("LOST BUFFER !!!!!!");
+          System.out.println("LOST BUFFER !!!!!!");
+          System.out.println("LOST BUFFER !!!!!!");
+          System.out.println("LOST BUFFER !!!!!!");
+          System.out.println("LOST BUFFER !!!!!!");
+        }
         @Override
         public void userEventTriggered(ChannelHandlerContext ctx, Object evt) {
           if (evt instanceof SslHandshakeCompletionEvent) {

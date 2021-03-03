@@ -10,6 +10,8 @@
  */
 package io.vertx.core.http.impl;
 
+import io.netty.buffer.ByteBuf;
+import io.netty.buffer.ByteBufUtil;
 import io.netty.buffer.Unpooled;
 import io.netty.channel.*;
 import io.netty.handler.codec.haproxy.HAProxyMessageDecoder;
@@ -29,6 +31,7 @@ import io.vertx.core.http.impl.cgbystrom.FlashPolicyHandler;
 import io.vertx.core.impl.ContextInternal;
 import io.vertx.core.impl.EventLoopContext;
 import io.vertx.core.impl.VertxInternal;
+import io.vertx.core.net.SocketAddress;
 import io.vertx.core.net.impl.SSLHelper;
 import io.vertx.core.net.impl.SslHandshakeCompletionHandler;
 import io.vertx.core.net.impl.VertxHandler;
@@ -36,6 +39,10 @@ import io.vertx.core.net.impl.HAProxyMessageCompletionHandler;
 import io.vertx.core.spi.metrics.HttpServerMetrics;
 
 import java.nio.charset.StandardCharsets;
+import java.util.List;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentMap;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.function.Supplier;
 
 /**
@@ -199,7 +206,29 @@ public class HttpServerWorker implements Handler<Channel> {
       .addListener(ChannelFutureListener.CLOSE);
   }
 
+  public static final ConcurrentMap<java.net.SocketAddress, List<String>> sent = new ConcurrentHashMap<>();
+
   private void handleHttp2(Channel ch) {
+    ch.pipeline().addLast(new ChannelOutboundHandlerAdapter() {
+      final CopyOnWriteArrayList<String> list = new CopyOnWriteArrayList<>();
+
+      @Override
+      public void write(ChannelHandlerContext ctx, Object msg, ChannelPromise promise) throws Exception {
+        if (msg instanceof ByteBuf) {
+          list.add(ByteBufUtil.hexDump((ByteBuf) msg) + " by " + Thread.currentThread());
+        }
+        super.write(ctx, msg, promise);
+      }
+
+      @Override
+      public void handlerAdded(ChannelHandlerContext ctx) throws Exception {
+        sent.put(ctx.channel().remoteAddress(), list);
+      }
+      @Override
+      public void handlerRemoved(ChannelHandlerContext ctx) throws Exception {
+        sent.remove(ctx.channel().remoteAddress());
+      }
+    });
     VertxHttp2ConnectionHandler<Http2ServerConnection> handler = buildHttp2ConnectionHandler(context, connectionHandler);
     ch.pipeline().addLast("handler", handler);
     configureHttp2(ch.pipeline());

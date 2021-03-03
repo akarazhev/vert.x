@@ -12,6 +12,7 @@
 package io.vertx.core.http.impl;
 
 import io.netty.buffer.ByteBuf;
+import io.netty.buffer.ByteBufUtil;
 import io.netty.channel.ChannelFuture;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.ChannelPromise;
@@ -25,6 +26,8 @@ import io.vertx.core.AsyncResult;
 import io.vertx.core.Future;
 import io.vertx.core.Handler;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.function.Function;
 
 /**
@@ -358,8 +361,31 @@ class VertxHttp2ConnectionHandler<C extends Http2ConnectionBase> extends Http2Co
     }
   }
 
+  private List<Object> received = new ArrayList<>();
+
   @Override
   public void channelRead(ChannelHandlerContext ctx, Object msg) throws Exception {
+    if (msg instanceof ByteBuf) {
+      String dump = ByteBufUtil.hexDump(((ByteBuf) msg));
+      if (!connection().isServer()) {
+        // System.out.println("Received: " + dump);
+      }
+/*
+*/
+/*
+      if (dump.equals("000000040100000000")) {
+        System.out.println("HELLL!!!!!!!!");
+        System.out.println("HELLL!!!!!!!!");
+        System.out.println("HELLL!!!!!!!!");
+        System.out.println("HELLL!!!!!!!!");
+        System.out.println("HELLL!!!!!!!!");
+        System.out.println("HELLL!!!!!!!!");
+      }
+*/
+      received.add(dump);
+    } else {
+      received.add(msg);
+    }
     if (msg instanceof Http2StreamFrame) {
       // Handle HTTP/2 clear text upgrade request
       if (msg instanceof Http2HeadersFrame) {
@@ -375,6 +401,29 @@ class VertxHttp2ConnectionHandler<C extends Http2ConnectionBase> extends Http2Co
     } else {
       super.channelRead(ctx, msg);
     }
+  }
+
+  @Override
+  public void onError(ChannelHandlerContext ctx, boolean outbound, Throwable cause) {
+    if (cause instanceof Http2Exception) {
+
+      System.out.println("Received messages on " + (connection().isServer() ? " server " : " client ") + ":");
+      if (!connection().isServer()) {
+        List<String> list = HttpServerWorker.sent.get(ctx.channel().localAddress());
+        System.out.println("SENT:");
+        for (Object o : list) {
+          System.out.println("----------------------------");
+          System.out.println(o);
+        }
+      }
+      System.out.println("RECEIVED:");
+      for (Object o : received) {
+        System.out.println("----------------------------");
+        System.out.println(o);
+      }
+      cause.printStackTrace();
+    }
+    super.onError(ctx, outbound, cause);
   }
 
   @Override
